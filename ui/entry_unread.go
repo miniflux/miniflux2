@@ -5,7 +5,9 @@
 package ui // import "miniflux.app/ui"
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"miniflux.app/http/request"
 	"miniflux.app/http/response/html"
@@ -39,17 +41,24 @@ func (h *handler) showUnreadEntryPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Make sure we always get the pagination in unread mode even if the page is refreshed.
-	if entry.Status == model.EntryStatusRead {
-		err = h.store.SetEntriesStatus(user.ID, []int64{entry.ID}, model.EntryStatusUnread)
+	unreadBefore := request.QueryTimestampParam(r, "unreadBefore")
+	if unreadBefore == nil {
+		html.RedirectWithQueries(w, r, "unreadBefore", fmt.Sprint(time.Now().Unix()))
+		return
+	}
+
+	if entry.Status == model.EntryStatusUnread {
+		err = h.store.SetEntriesStatus(user.ID, []int64{entry.ID}, model.EntryStatusRead)
 		if err != nil {
 			html.ServerError(w, r, err)
 			return
 		}
+
+		entry.Status = model.EntryStatusRead
 	}
 
 	entryPaginationBuilder := storage.NewEntryPaginationBuilder(h.store, user.ID, entry.ID, user.EntryDirection)
-	entryPaginationBuilder.WithStatus(model.EntryStatusUnread)
+	entryPaginationBuilder.WithUnreadBefore(*unreadBefore)
 	prevEntry, nextEntry, err := entryPaginationBuilder.Entries()
 	if err != nil {
 		html.ServerError(w, r, err)
@@ -66,14 +75,6 @@ func (h *handler) showUnreadEntryPage(w http.ResponseWriter, r *http.Request) {
 		prevEntryRoute = route.Path(h.router, "unreadEntry", "entryID", prevEntry.ID)
 	}
 
-	// Always mark the entry as read after fetching the pagination.
-	err = h.store.SetEntriesStatus(user.ID, []int64{entry.ID}, model.EntryStatusRead)
-	if err != nil {
-		html.ServerError(w, r, err)
-		return
-	}
-	entry.Status = model.EntryStatusRead
-
 	sess := session.New(h.store, request.SessionID(r))
 	view := view.New(h.tpl, r, sess)
 	view.Set("entry", entry)
@@ -85,6 +86,7 @@ func (h *handler) showUnreadEntryPage(w http.ResponseWriter, r *http.Request) {
 	view.Set("user", user)
 	view.Set("hasSaveEntry", h.store.HasSaveEntry(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+	view.Set("unreadBefore", unreadBefore)
 
 	// Fetching the counter here avoid to be off by one.
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
