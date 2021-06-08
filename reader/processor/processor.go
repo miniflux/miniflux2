@@ -41,10 +41,6 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed) {
 	for _, entry := range feed.Entries {
 		logger.Debug("[Processor] Processing entry %q from feed %q", entry.URL, feed.FeedURL)
 
-		if isBlockedEntry(feed, entry) || !isAllowedEntry(feed, entry) {
-			continue
-		}
-
 		entryIsNew := !store.EntryURLExists(feed.ID, entry.URL)
 		if feed.Crawler && entryIsNew {
 			logger.Debug("[Processor] Crawling entry %q from feed %q", entry.URL, feed.FeedURL)
@@ -74,6 +70,10 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed) {
 			}
 		}
 
+		if isBlockedEntry(feed, entry) || !isAllowedEntry(feed, entry) {
+			continue
+		}
+
 		entry.Content = rewrite.Rewriter(entry.URL, entry.Content, feed.RewriteRules)
 
 		// The sanitizer should always run at the end of the process to make sure unsafe HTML is filtered.
@@ -88,8 +88,12 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed) {
 
 func isBlockedEntry(feed *model.Feed, entry *model.Entry) bool {
 	if feed.BlocklistRules != "" {
-		match, _ := regexp.MatchString(feed.BlocklistRules, entry.Title)
-		if match {
+		matchTitle, _ := regexp.MatchString(feed.BlocklistRules, entry.Title)
+		matchContent := false
+		if feed.ApplyFilterToContent {
+			matchContent, _ = regexp.MatchString(feed.BlocklistRules, entry.Content)
+		}
+		if matchTitle || matchContent {
 			logger.Debug("[Processor] Blocking entry %q from feed %q based on rule %q", entry.Title, feed.FeedURL, feed.BlocklistRules)
 			return true
 		}
@@ -99,8 +103,12 @@ func isBlockedEntry(feed *model.Feed, entry *model.Entry) bool {
 
 func isAllowedEntry(feed *model.Feed, entry *model.Entry) bool {
 	if feed.KeeplistRules != "" {
-		match, _ := regexp.MatchString(feed.KeeplistRules, entry.Title)
-		if match {
+		matchTitle, _ := regexp.MatchString(feed.KeeplistRules, entry.Title)
+		matchContent := false
+		if feed.ApplyFilterToContent {
+			matchContent, _ = regexp.MatchString(feed.KeeplistRules, entry.Content)
+		}
+		if matchTitle || matchContent {
 			logger.Debug("[Processor] Allow entry %q from feed %q based on rule %q", entry.Title, feed.FeedURL, feed.KeeplistRules)
 			return true
 		}
