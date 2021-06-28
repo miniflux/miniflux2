@@ -386,7 +386,6 @@ func (s *Storage) SetEntriesBookmarkedState(userID int64, entryIDs []int64, star
 	}
 
 	return nil
-
 }
 
 // ToggleBookmark toggles entry bookmark value.
